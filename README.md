@@ -250,7 +250,6 @@ mypy src
 pytest
 ```
 
-Maintainers: see [CONTRIBUTING.md](CONTRIBUTING.md) for hooks, releases, and PyPI publishing.  
 Security: see [SECURITY.md](SECURITY.md).
 
 ## License
