@@ -1,0 +1,3310 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Apruvly API",
+    "version": "1.1.0",
+    "description": "The Apruvly REST API creates and manages multi-step approval workflows. Notifications go out over Email, Slack, Microsoft Teams, WhatsApp (Meta or Twilio), Telegram, Discord, DingTalk, or Twilio SMS — with escalation, lifecycle actions, and credit-based billing.\n\n## Authentication\n\n```\nAuthorization: Bearer <api-key>\n```\n\nAPI keys are created in the dashboard under **Settings → API Keys**. Each key has one or more scopes; missing scope → `403`.\n\n| Scope | Access |\n|-------|--------|\n| `api:workflow:read` | Get workflow by id / external_id |\n| `api:workflow:write` | Create, validate, approve, reject |\n| `api:workflow:list` | Search and recent |\n| `api:workflow:cancel` | Cancel workflow |\n| `api:settings:read` | Billing + list/get integrations |\n| `api:settings:write` | Upsert/delete integrations |\n| `api:directory:list` | List areas / people |\n| `api:directory:read` | Get area / person by id |\n| `api:directory:write` | Create / update area or person |\n| `api:directory:bulk` | Bulk create / update |\n| `api:directory:delete` | Delete area / person |\n\n`GET /api/v1/health` accepts any authenticated key (no scope).\n\n## Response envelope\n\n```json\n{ \"success\": true, \"message\": \"optional\", \"data\": { } }\n```\n\nOn errors `success` is `false`. Typed errors may include `data.errorCode` (e.g. `insufficient_credits`, `plan_not_eligible`, `directory_disabled`).\n\n## Rate limits\n\n- **Global:** 100 req/s per IP → `429`\n- **Approve/reject:** 10 req/min per IP → `429`\n- Plan quotas (concurrent workflows, RPM/RPD/RPC) also return `429` with `quota_type`\n\n## Credits\n\nCreating a workflow debits credits:\n\n- **1 credit per recipient** on each step (and each escalation level); channels without a recipient list (e.g. DingTalk group robot) cost 1 per step\n- Step-level `actions` charge separately (1 per webhook / per action recipient)\n- **+1 flat surcharge** if any external-delivery action is configured on workflow-level `on` events\n- Minimum total: **1 credit**\n\n`POST /api/v1/workflow/validate` checks the payload without charging. Balance: `GET /api/v1/billing`.\n\n## i18n\n\nError messages follow `Accept-Language` (`en`, `pt-BR`). Default: English.\n",
+    "contact": {
+      "name": "Apruvly Support",
+      "url": "https://apruvly.io/support"
+    },
+    "license": {
+      "name": "Proprietary"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://api.apruvly.io",
+      "description": "Production"
+    }
+  ],
+  "security": [
+    {
+      "BearerAuth": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "System",
+      "description": "Health check."
+    },
+    {
+      "name": "Workflows",
+      "description": "Create, inspect, search, and cancel workflows."
+    },
+    {
+      "name": "Decisions",
+      "description": "Approve or reject a pending challenge."
+    },
+    {
+      "name": "Integrations",
+      "description": "Notification channel credentials."
+    },
+    {
+      "name": "Billing",
+      "description": "Plan, balance, and usage."
+    },
+    {
+      "name": "Directory",
+      "description": "Areas and people address book. Paid plans only; must be enabled in the web console at /directory."
+    }
+  ],
+  "paths": {
+    "/api/v1/health": {
+      "get": {
+        "summary": "Health check",
+        "tags": [
+          "System"
+        ],
+        "description": "Any authenticated API key. No scope required.",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/OK"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/api/v1/workflow": {
+      "post": {
+        "summary": "Create workflow",
+        "tags": [
+          "Workflows"
+        ],
+        "description": "Starts a workflow and debits credits. Trailing slash (`/api/v1/workflow/`) is accepted.",
+        "x-required-scope": "api:workflow:write",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowConfig"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "$ref": "#/components/responses/CreatedId"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/api/v1/workflow/validate": {
+      "post": {
+        "summary": "Validate workflow config",
+        "tags": [
+          "Workflows"
+        ],
+        "description": "Same validation as create, without persisting or charging credits.",
+        "x-required-scope": "api:workflow:write",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowConfig"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/OK"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/api/v1/workflow/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Get workflow status",
+        "tags": [
+          "Workflows"
+        ],
+        "x-required-scope": "api:workflow:read",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/WorkflowStatus"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Cancel workflow",
+        "tags": [
+          "Workflows"
+        ],
+        "x-required-scope": "api:workflow:cancel",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/CanceledId"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "406": {
+            "$ref": "#/components/responses/NotAcceptable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/api/v1/workflow/external/{external_id}": {
+      "parameters": [
+        {
+          "name": "external_id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "Growth+ correlation id."
+        }
+      ],
+      "get": {
+        "summary": "Get workflow by external_id",
+        "tags": [
+          "Workflows"
+        ],
+        "x-required-scope": "api:workflow:read",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/WorkflowStatus"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Cancel workflow by external_id",
+        "tags": [
+          "Workflows"
+        ],
+        "x-required-scope": "api:workflow:cancel",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/CanceledId"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "406": {
+            "$ref": "#/components/responses/NotAcceptable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/api/v1/workflow/{id}/{challenge}/approve": {
+      "put": {
+        "summary": "Approve a challenge",
+        "tags": [
+          "Decisions"
+        ],
+        "description": "Rate-limited to 10 requests/min per IP.",
+        "x-required-scope": "api:workflow:write",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "challenge",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecisionBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/OK"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "406": {
+            "$ref": "#/components/responses/NotAcceptable"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/api/v1/workflow/{id}/{challenge}/reject": {
+      "put": {
+        "summary": "Reject a challenge",
+        "tags": [
+          "Decisions"
+        ],
+        "description": "Rate-limited to 10 requests/min per IP.",
+        "x-required-scope": "api:workflow:write",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "challenge",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecisionBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/OK"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "406": {
+            "$ref": "#/components/responses/NotAcceptable"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/api/v1/workflows/search": {
+      "get": {
+        "summary": "Search workflows",
+        "tags": [
+          "Workflows"
+        ],
+        "x-required-scope": "api:workflow:list",
+        "parameters": [
+          {
+            "name": "query",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Full-text on title/description."
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "active",
+                "approved",
+                "rejected",
+                "canceled",
+                "expired",
+                "error"
+              ]
+            },
+            "description": "`active` is an alias for `pending`."
+          },
+          {
+            "name": "stage",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter by current step id."
+          },
+          {
+            "name": "step",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Alias of `stage`."
+          },
+          {
+            "name": "tags",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated tags."
+          },
+          {
+            "name": "external_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Growth+ only."
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "maximum": 500
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/WorkflowStateList"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/api/v1/workflows/recent": {
+      "get": {
+        "summary": "Recent workflows",
+        "tags": [
+          "Workflows"
+        ],
+        "description": "Returns the 10 most recent workflows. No query parameters.",
+        "x-required-scope": "api:workflow:list",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/WorkflowStateList"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/api/v1/billing": {
+      "get": {
+        "summary": "Billing info",
+        "tags": [
+          "Billing"
+        ],
+        "x-required-scope": "api:settings:read",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/BillingInfo"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/api/v1/integrations": {
+      "get": {
+        "summary": "List integrations",
+        "tags": [
+          "Integrations"
+        ],
+        "x-required-scope": "api:settings:read",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/IntegrationList"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/api/v1/integrations/{integration}": {
+      "parameters": [
+        {
+          "name": "integration",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "ms-teams",
+              "slack",
+              "whatsapp",
+              "smtp",
+              "telegram",
+              "dingtalk",
+              "twilio",
+              "twilio-whatsapp",
+              "discord"
+            ]
+          }
+        }
+      ],
+      "get": {
+        "summary": "Get integration",
+        "tags": [
+          "Integrations"
+        ],
+        "x-required-scope": "api:settings:read",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/IntegrationStatus"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      },
+      "put": {
+        "summary": "Upsert integration",
+        "tags": [
+          "Integrations"
+        ],
+        "description": "Body shape depends on `{integration}`. Returns `204` with no body.",
+        "x-required-scope": "api:settings:write",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IntegrationConfig"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "$ref": "#/components/responses/NoContent"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete integration",
+        "tags": [
+          "Integrations"
+        ],
+        "x-required-scope": "api:settings:write",
+        "responses": {
+          "204": {
+            "$ref": "#/components/responses/NoContent"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/api/v1/directory/areas": {
+      "get": {
+        "summary": "List areas",
+        "tags": [
+          "Directory"
+        ],
+        "x-required-scope": "api:directory:list",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/DirectoryAreaList"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "402": {
+            "$ref": "#/components/responses/DirectoryPaymentRequired"
+          },
+          "409": {
+            "$ref": "#/components/responses/DirectoryDisabled"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create area",
+        "tags": [
+          "Directory"
+        ],
+        "x-required-scope": "api:directory:write",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DirectoryAreaInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "$ref": "#/components/responses/DirectoryArea"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "402": {
+            "$ref": "#/components/responses/DirectoryPaymentRequired"
+          },
+          "409": {
+            "$ref": "#/components/responses/DirectoryDisabled"
+          }
+        }
+      }
+    },
+    "/api/v1/directory/areas/bulk": {
+      "post": {
+        "summary": "Bulk create areas",
+        "tags": [
+          "Directory"
+        ],
+        "description": "Max 100 items per request.",
+        "x-required-scope": "api:directory:bulk",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DirectoryBulkAreasRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "$ref": "#/components/responses/DirectoryBulkAreas"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "402": {
+            "$ref": "#/components/responses/DirectoryPaymentRequired"
+          },
+          "409": {
+            "$ref": "#/components/responses/DirectoryDisabled"
+          }
+        }
+      },
+      "put": {
+        "summary": "Bulk update areas",
+        "tags": [
+          "Directory"
+        ],
+        "description": "Each item requires `id`.",
+        "x-required-scope": "api:directory:bulk",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DirectoryBulkAreasRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/DirectoryBulkAreas"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "402": {
+            "$ref": "#/components/responses/DirectoryPaymentRequired"
+          },
+          "409": {
+            "$ref": "#/components/responses/DirectoryDisabled"
+          }
+        }
+      }
+    },
+    "/api/v1/directory/areas/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Get area",
+        "tags": [
+          "Directory"
+        ],
+        "x-required-scope": "api:directory:read",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/DirectoryArea"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "402": {
+            "$ref": "#/components/responses/DirectoryPaymentRequired"
+          },
+          "409": {
+            "$ref": "#/components/responses/DirectoryDisabled"
+          }
+        }
+      },
+      "put": {
+        "summary": "Update area",
+        "tags": [
+          "Directory"
+        ],
+        "x-required-scope": "api:directory:write",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DirectoryAreaInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/DirectoryArea"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "402": {
+            "$ref": "#/components/responses/DirectoryPaymentRequired"
+          },
+          "409": {
+            "$ref": "#/components/responses/DirectoryDisabled"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete area",
+        "tags": [
+          "Directory"
+        ],
+        "x-required-scope": "api:directory:delete",
+        "responses": {
+          "204": {
+            "$ref": "#/components/responses/NoContent"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "402": {
+            "$ref": "#/components/responses/DirectoryPaymentRequired"
+          },
+          "409": {
+            "$ref": "#/components/responses/DirectoryDisabled"
+          }
+        }
+      }
+    },
+    "/api/v1/directory/people": {
+      "get": {
+        "summary": "List people",
+        "tags": [
+          "Directory"
+        ],
+        "x-required-scope": "api:directory:list",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 1,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Search display name."
+          },
+          {
+            "name": "area",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Filter by area id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/DirectoryPeopleList"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "402": {
+            "$ref": "#/components/responses/DirectoryPaymentRequired"
+          },
+          "409": {
+            "$ref": "#/components/responses/DirectoryDisabled"
+          }
+        },
+        "description": "Page size is fixed at 25."
+      },
+      "post": {
+        "summary": "Create person",
+        "tags": [
+          "Directory"
+        ],
+        "x-required-scope": "api:directory:write",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DirectoryPersonInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "$ref": "#/components/responses/DirectoryPerson"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "402": {
+            "$ref": "#/components/responses/DirectoryPaymentRequired"
+          },
+          "409": {
+            "$ref": "#/components/responses/DirectoryDisabled"
+          }
+        }
+      }
+    },
+    "/api/v1/directory/people/bulk": {
+      "post": {
+        "summary": "Bulk create people",
+        "tags": [
+          "Directory"
+        ],
+        "description": "Max 1000 items per request.",
+        "x-required-scope": "api:directory:bulk",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DirectoryBulkPeopleRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "$ref": "#/components/responses/DirectoryBulkPeople"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "402": {
+            "$ref": "#/components/responses/DirectoryPaymentRequired"
+          },
+          "409": {
+            "$ref": "#/components/responses/DirectoryDisabled"
+          }
+        }
+      },
+      "put": {
+        "summary": "Bulk update people",
+        "tags": [
+          "Directory"
+        ],
+        "description": "Each item requires `id`.",
+        "x-required-scope": "api:directory:bulk",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DirectoryBulkPeopleRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/DirectoryBulkPeople"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "402": {
+            "$ref": "#/components/responses/DirectoryPaymentRequired"
+          },
+          "409": {
+            "$ref": "#/components/responses/DirectoryDisabled"
+          }
+        }
+      }
+    },
+    "/api/v1/directory/people/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Get person",
+        "tags": [
+          "Directory"
+        ],
+        "x-required-scope": "api:directory:read",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/DirectoryPerson"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "402": {
+            "$ref": "#/components/responses/DirectoryPaymentRequired"
+          },
+          "409": {
+            "$ref": "#/components/responses/DirectoryDisabled"
+          }
+        }
+      },
+      "put": {
+        "summary": "Update person",
+        "tags": [
+          "Directory"
+        ],
+        "x-required-scope": "api:directory:write",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DirectoryPersonInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/DirectoryPerson"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "402": {
+            "$ref": "#/components/responses/DirectoryPaymentRequired"
+          },
+          "409": {
+            "$ref": "#/components/responses/DirectoryDisabled"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete person",
+        "tags": [
+          "Directory"
+        ],
+        "x-required-scope": "api:directory:delete",
+        "responses": {
+          "204": {
+            "$ref": "#/components/responses/NoContent"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "402": {
+            "$ref": "#/components/responses/DirectoryPaymentRequired"
+          },
+          "409": {
+            "$ref": "#/components/responses/DirectoryDisabled"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "API key from the Apruvly dashboard."
+      }
+    },
+    "schemas": {
+      "APIResponse": {
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "description": "Endpoint-specific payload."
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "description": "Error envelope. For typed errors, `data` is a models.Error object.",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "enum": [
+              false
+            ]
+          },
+          "message": {
+            "type": "string",
+            "description": "Present on some handlers; typed errors often put the message inside `data.message`."
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "message": {
+                "type": "string"
+              },
+              "cause": {
+                "type": "string"
+              },
+              "field": {
+                "type": "string"
+              },
+              "parameter": {
+                "type": "string"
+              },
+              "value": {},
+              "errorCode": {
+                "type": "string",
+                "enum": [
+                  "bad_request",
+                  "invalid_parameter",
+                  "unauthorized",
+                  "insufficient_credits",
+                  "plan_not_eligible",
+                  "directory_disabled"
+                ]
+              },
+              "integration": {
+                "type": "string",
+                "description": "Set on 422 when a required integration is missing."
+              },
+              "settingsUrl": {
+                "type": "string",
+                "description": "Usually `/integrations`."
+              }
+            }
+          }
+        }
+      },
+      "QuotaErrorResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "enum": [
+              false
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "type": "object",
+            "required": [
+              "quota_type",
+              "limit"
+            ],
+            "properties": {
+              "quota_type": {
+                "type": "string",
+                "enum": [
+                  "concurrent_workflows",
+                  "requests_per_minute",
+                  "requests_per_day",
+                  "requests_per_cycle"
+                ]
+              },
+              "limit": {
+                "type": "integer"
+              }
+            }
+          }
+        }
+      },
+      "WorkflowObject": {
+        "type": "object",
+        "required": [
+          "title"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 200,
+            "example": "Q1 Marketing Budget"
+          },
+          "description": {
+            "type": "string"
+          },
+          "links": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z0-9_-]+$"
+            }
+          }
+        }
+      },
+      "CardOverride": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "links": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uri"
+            }
+          }
+        }
+      },
+      "EmailData": {
+        "type": "object",
+        "required": [
+          "to",
+          "subject",
+          "body"
+        ],
+        "description": "Email approval step. Body must include `${approve_link}` and `${reject_link}`. Also supports `${user_email}`, `${user_name}`.",
+        "properties": {
+          "to": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "email"
+            },
+            "minItems": 1
+          },
+          "subject": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "cc": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "email"
+            }
+          },
+          "bcc": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "email"
+            }
+          },
+          "html": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      },
+      "MSTeamsData": {
+        "type": "object",
+        "description": "MS Teams Adaptive Card. Requires ms-teams integration.",
+        "properties": {
+          "to": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "email"
+            },
+            "minItems": 1
+          },
+          "card": {
+            "$ref": "#/components/schemas/CardOverride"
+          },
+          "delivery": {
+            "type": "string",
+            "enum": [
+              "direct",
+              "channel"
+            ],
+            "default": "direct",
+            "description": "`direct` = per-person; `channel` = shared destination + allowList."
+          },
+          "allowList": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Authorized deciders when delivery is `channel`."
+          }
+        },
+        "required": [
+          "to"
+        ]
+      },
+      "SlackData": {
+        "type": "object",
+        "description": "Slack Block Kit DM/channel. Requires slack integration.",
+        "properties": {
+          "to": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "email"
+            },
+            "minItems": 1
+          },
+          "card": {
+            "$ref": "#/components/schemas/CardOverride"
+          },
+          "delivery": {
+            "type": "string",
+            "enum": [
+              "direct",
+              "channel"
+            ],
+            "default": "direct",
+            "description": "`direct` = per-person; `channel` = shared destination + allowList."
+          },
+          "allowList": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Authorized deciders when delivery is `channel`."
+          }
+        },
+        "required": [
+          "to"
+        ]
+      },
+      "WhatsAppData": {
+        "type": "object",
+        "required": [
+          "to"
+        ],
+        "description": "Meta WhatsApp Business Cloud. Requires whatsapp integration.",
+        "properties": {
+          "to": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^\\+[1-9]\\d{6,14}$",
+              "example": "+5511999999999"
+            },
+            "minItems": 1
+          },
+          "card": {
+            "$ref": "#/components/schemas/CardOverride"
+          }
+        }
+      },
+      "TelegramData": {
+        "type": "object",
+        "description": "Telegram Bot. Requires telegram integration. `to` = chat IDs (string).",
+        "properties": {
+          "to": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^-?[1-9][0-9]*$",
+              "example": "123456789"
+            },
+            "minItems": 1
+          },
+          "card": {
+            "$ref": "#/components/schemas/CardOverride"
+          },
+          "delivery": {
+            "type": "string",
+            "enum": [
+              "direct",
+              "channel"
+            ],
+            "default": "direct",
+            "description": "`direct` = per-person; `channel` = shared destination + allowList."
+          },
+          "allowList": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Authorized deciders when delivery is `channel`."
+          },
+          "markdown": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "required": [
+          "to"
+        ]
+      },
+      "DiscordData": {
+        "type": "object",
+        "description": "Discord Bot DM/channel. Requires discord integration. `to` = snowflake IDs.",
+        "properties": {
+          "to": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^\\d{17,20}$"
+            },
+            "minItems": 1
+          },
+          "card": {
+            "$ref": "#/components/schemas/CardOverride"
+          },
+          "delivery": {
+            "type": "string",
+            "enum": [
+              "direct",
+              "channel"
+            ],
+            "default": "direct",
+            "description": "`direct` = per-person; `channel` = shared destination + allowList."
+          },
+          "allowList": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Authorized deciders when delivery is `channel`."
+          }
+        },
+        "required": [
+          "to"
+        ]
+      },
+      "DingTalkData": {
+        "type": "object",
+        "description": "DingTalk group robot. Requires dingtalk integration. Optional `to` mobiles for @mentions.",
+        "properties": {
+          "to": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Optional mention list."
+          },
+          "card": {
+            "$ref": "#/components/schemas/CardOverride"
+          },
+          "delivery": {
+            "type": "string",
+            "enum": [
+              "direct",
+              "channel"
+            ],
+            "default": "direct",
+            "description": "`direct` = per-person; `channel` = shared destination + allowList."
+          },
+          "allowList": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Authorized deciders when delivery is `channel`."
+          }
+        }
+      },
+      "TwilioSMSData": {
+        "type": "object",
+        "required": [
+          "to"
+        ],
+        "description": "Twilio SMS approvals. Requires twilio integration.",
+        "properties": {
+          "to": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^\\+[1-9]\\d{6,14}$",
+              "example": "+5511999999999"
+            },
+            "minItems": 1
+          },
+          "card": {
+            "$ref": "#/components/schemas/CardOverride"
+          }
+        }
+      },
+      "TwilioWhatsAppData": {
+        "type": "object",
+        "required": [
+          "to"
+        ],
+        "description": "Twilio WhatsApp channel (distinct from Meta whatsapp). Requires twilio-whatsapp integration.",
+        "properties": {
+          "to": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^\\+[1-9]\\d{6,14}$",
+              "example": "+5511999999999"
+            },
+            "minItems": 1
+          },
+          "card": {
+            "$ref": "#/components/schemas/CardOverride"
+          },
+          "contentVariables": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "mediaUrl": {
+            "type": "string",
+            "format": "uri"
+          }
+        }
+      },
+      "Escalation": {
+        "type": "object",
+        "required": [
+          "type",
+          "data",
+          "after"
+        ],
+        "description": "Escalate if no decision. Min `after`: 5m. Max depth: 5. Max 10 recipients per level.",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "email",
+              "ms-teams",
+              "slack",
+              "whatsapp",
+              "telegram",
+              "dingtalk",
+              "discord",
+              "twilio-sms",
+              "twilio-whatsapp"
+            ]
+          },
+          "data": {
+            "description": "Same shape as the matching step `data`."
+          },
+          "after": {
+            "type": "string",
+            "description": "Duration, e.g. `30m`, `1h`, `1d`.",
+            "example": "1h"
+          },
+          "escalation": {
+            "$ref": "#/components/schemas/Escalation"
+          }
+        }
+      },
+      "Action": {
+        "type": "object",
+        "required": [
+          "type",
+          "data"
+        ],
+        "description": "Lifecycle / step action. Types: `webhook`, `email`, `twilio-sms`, `twilio-whatsapp`, `whatsapp`, `discord`, `slack`, `ms-teams`, `telegram`, `dingtalk`.\n\nCommon shapes:\n- webhook: `{ \"url\", \"method\", \"headers?\", \"body?\", \"timeout?\", \"async?\" }`\n- email: `{ \"to\", \"subject\", \"body\", ... }`\n- slack: `{ \"to\": [\"user@…\"| \"#channel\"], \"text\" }`\n- discord: `{ \"channel\": \"<snowflake>\"|\"#<snowflake>\", \"title\", \"description?\" }`\n",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "data": {
+            "type": "object"
+          }
+        }
+      },
+      "StepActions": {
+        "type": "object",
+        "properties": {
+          "approved": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Action"
+            }
+          },
+          "rejected": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Action"
+            }
+          }
+        }
+      },
+      "Step": {
+        "type": "object",
+        "required": [
+          "type",
+          "data"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "email",
+              "ms-teams",
+              "slack",
+              "whatsapp",
+              "telegram",
+              "dingtalk",
+              "discord",
+              "twilio-sms",
+              "twilio-whatsapp"
+            ]
+          },
+          "data": {
+            "description": "Channel-specific payload.",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/EmailData"
+              },
+              {
+                "$ref": "#/components/schemas/MSTeamsData"
+              },
+              {
+                "$ref": "#/components/schemas/SlackData"
+              },
+              {
+                "$ref": "#/components/schemas/WhatsAppData"
+              },
+              {
+                "$ref": "#/components/schemas/TelegramData"
+              },
+              {
+                "$ref": "#/components/schemas/DingTalkData"
+              },
+              {
+                "$ref": "#/components/schemas/DiscordData"
+              },
+              {
+                "$ref": "#/components/schemas/TwilioSMSData"
+              },
+              {
+                "$ref": "#/components/schemas/TwilioWhatsAppData"
+              }
+            ]
+          },
+          "minApprovals": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1
+          },
+          "minRejections": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1
+          },
+          "approved": {
+            "type": "string",
+            "description": "Next step id on approval. Empty = workflow approved."
+          },
+          "rejected": {
+            "type": "string",
+            "description": "Next step id on rejection. Empty = workflow rejected."
+          },
+          "escalation": {
+            "$ref": "#/components/schemas/Escalation"
+          },
+          "actions": {
+            "$ref": "#/components/schemas/StepActions"
+          }
+        }
+      },
+      "WorkflowConfig": {
+        "type": "object",
+        "required": [
+          "object",
+          "expires",
+          "start",
+          "workflow"
+        ],
+        "properties": {
+          "object": {
+            "$ref": "#/components/schemas/WorkflowObject"
+          },
+          "expires": {
+            "type": "string",
+            "description": "TTL from creation. Min 5m, max 7d.",
+            "example": "24h"
+          },
+          "start": {
+            "type": "string",
+            "description": "Id of the first step in `workflow`.",
+            "example": "manager"
+          },
+          "workflow": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Step"
+            },
+            "description": "Map of step id → Step. Step ids: `^[a-z][a-z0-9_-]+$`."
+          },
+          "on": {
+            "type": "object",
+            "description": "Lifecycle event → actions. Events: workflow_created, workflow_canceled, workflow_approved, workflow_rejected, workflow_expired, workflow_errored, workflow_completed, step_approved, step_escalated, user_approval, user_rejection.",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/Action"
+              }
+            }
+          },
+          "external_id": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Caller correlation id (Growth+). Unique per account. Pattern: `[A-Za-z0-9._:/-]+`."
+          },
+          "disable_email_fallback": {
+            "type": "boolean",
+            "default": false,
+            "description": "Opt out of email fallback when a channel notification fails. Default: fallback enabled."
+          },
+          "debug": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "example": {
+          "object": {
+            "title": "Q1 Marketing Budget",
+            "description": "Campaign spend approval",
+            "tags": [
+              "finance"
+            ]
+          },
+          "expires": "24h",
+          "start": "manager",
+          "workflow": {
+            "manager": {
+              "type": "email",
+              "data": {
+                "to": [
+                  "manager@company.com"
+                ],
+                "subject": "Approval required",
+                "body": "Please review.\n\nApprove: ${approve_link}\nReject: ${reject_link}"
+              }
+            }
+          },
+          "on": {
+            "workflow_approved": [
+              {
+                "type": "webhook",
+                "data": {
+                  "url": "https://hooks.example.com/approved",
+                  "method": "POST"
+                }
+              }
+            ]
+          }
+        }
+      },
+      "Approver": {
+        "type": "object",
+        "properties": {
+          "challenge": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "is_approved": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "notify_failed": {
+            "type": "boolean"
+          },
+          "notify_attempts": {
+            "type": "integer"
+          },
+          "notify_retry_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "notify_last_error": {
+            "type": "string"
+          },
+          "notify_last_error_detail": {
+            "type": "string"
+          },
+          "notify_terminal": {
+            "type": "boolean"
+          },
+          "step_name": {
+            "type": "string"
+          },
+          "esc_level": {
+            "type": "integer"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "directory_email": {
+            "type": "string"
+          },
+          "directory_person_id": {
+            "type": "string"
+          }
+        }
+      },
+      "Decision": {
+        "type": "object",
+        "properties": {
+          "user": {
+            "type": "string"
+          },
+          "is_approved": {
+            "type": "boolean"
+          },
+          "ip": {
+            "type": "string"
+          },
+          "headers": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "decisionAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "WorkflowStatus": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "externalId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "approved",
+              "rejected",
+              "canceled",
+              "expired",
+              "error"
+            ]
+          },
+          "currentStep": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "decisions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Decision"
+            }
+          },
+          "currentApprovers": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Approver"
+            }
+          }
+        }
+      },
+      "WorkflowCreated": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "description": "Returned by POST /api/v1/workflow (HTTP 202).",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "externalId": {
+            "type": "string"
+          },
+          "debug": {
+            "type": "boolean",
+            "description": "Present when the workflow was created with debug=true."
+          }
+        }
+      },
+      "WorkflowState": {
+        "type": "object",
+        "description": "Compact row returned by search/recent (snake_case).",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "current_step": {
+            "type": "string"
+          },
+          "current_status": {
+            "type": "string"
+          },
+          "error_message": {
+            "type": "string"
+          },
+          "external_id": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "completed_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "DecisionBody": {
+        "type": "object",
+        "properties": {
+          "comment": {
+            "type": "string",
+            "maxLength": 255,
+            "description": "Optional comment stored with the decision."
+          }
+        }
+      },
+      "SubscriptionInfo": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "billing_period": {
+            "type": "string"
+          },
+          "trial_ends_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "current_period_start": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "current_period_end": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "cancel_at_period_end": {
+            "type": "boolean"
+          },
+          "auto_renew": {
+            "type": "boolean"
+          }
+        }
+      },
+      "PlanInfo": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "price": {
+            "type": "number"
+          },
+          "is_unlimited": {
+            "type": "boolean"
+          },
+          "credit_monthly_allowance": {
+            "type": "integer"
+          },
+          "max_concurrent_workflows": {
+            "type": "integer"
+          },
+          "max_requests_per_minute": {
+            "type": "integer"
+          },
+          "max_requests_per_day": {
+            "type": "integer"
+          },
+          "max_requests_per_cycle": {
+            "type": "integer"
+          },
+          "max_api_keys": {
+            "type": "integer"
+          },
+          "max_approvers": {
+            "type": "integer"
+          },
+          "max_escalations": {
+            "type": "integer"
+          },
+          "max_webhooks": {
+            "type": "integer"
+          },
+          "workflow_timeout_hours": {
+            "type": "integer"
+          },
+          "data_retention_days": {
+            "type": "integer"
+          },
+          "multi_level_approval": {
+            "type": "boolean"
+          },
+          "rollover_enabled": {
+            "type": "boolean"
+          },
+          "rollover_pct": {
+            "type": "integer"
+          }
+        }
+      },
+      "UsageInfo": {
+        "type": "object",
+        "properties": {
+          "active_workflows": {
+            "type": "integer"
+          },
+          "workflows_today": {
+            "type": "integer"
+          },
+          "workflows_this_cycle": {
+            "type": "integer"
+          }
+        }
+      },
+      "TransactionEntry": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "integer"
+          },
+          "balance_after": {
+            "type": "integer"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "reference_id": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "BillingInfo": {
+        "type": "object",
+        "properties": {
+          "subscription": {
+            "$ref": "#/components/schemas/SubscriptionInfo"
+          },
+          "plan": {
+            "$ref": "#/components/schemas/PlanInfo"
+          },
+          "balance": {
+            "type": "integer"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/UsageInfo"
+          },
+          "recent_transactions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TransactionEntry"
+            }
+          }
+        }
+      },
+      "MSTeamsIntegrationConfig": {
+        "type": "object",
+        "required": [
+          "tenantId",
+          "botAppId",
+          "botAppPassword"
+        ],
+        "description": "Azure Bot Service credentials. Secrets are write-only.",
+        "properties": {
+          "tenantId": {
+            "type": "string"
+          },
+          "botAppId": {
+            "type": "string"
+          },
+          "botAppPassword": {
+            "type": "string"
+          },
+          "graphAppId": {
+            "type": "string"
+          },
+          "graphAppPassword": {
+            "type": "string"
+          },
+          "autoInstall": {
+            "type": "boolean"
+          }
+        }
+      },
+      "SlackIntegrationConfig": {
+        "type": "object",
+        "required": [
+          "botToken",
+          "signingSecret"
+        ],
+        "properties": {
+          "botToken": {
+            "type": "string"
+          },
+          "signingSecret": {
+            "type": "string"
+          }
+        }
+      },
+      "WhatsAppIntegrationConfig": {
+        "type": "object",
+        "required": [
+          "phoneNumberId",
+          "accessToken",
+          "verifyToken"
+        ],
+        "properties": {
+          "phoneNumberId": {
+            "type": "string"
+          },
+          "accessToken": {
+            "type": "string"
+          },
+          "verifyToken": {
+            "type": "string"
+          },
+          "appSecret": {
+            "type": "string"
+          },
+          "apiVersion": {
+            "type": "string",
+            "example": "v21.0"
+          }
+        }
+      },
+      "TelegramIntegrationConfig": {
+        "type": "object",
+        "required": [
+          "botToken"
+        ],
+        "properties": {
+          "botToken": {
+            "type": "string"
+          }
+        }
+      },
+      "DingTalkIntegrationConfig": {
+        "type": "object",
+        "required": [
+          "accessToken"
+        ],
+        "properties": {
+          "accessToken": {
+            "type": "string"
+          },
+          "secret": {
+            "type": "string"
+          }
+        }
+      },
+      "DiscordIntegrationConfig": {
+        "type": "object",
+        "required": [
+          "applicationId",
+          "botToken",
+          "publicKey"
+        ],
+        "properties": {
+          "applicationId": {
+            "type": "string"
+          },
+          "guildId": {
+            "type": "string"
+          },
+          "botToken": {
+            "type": "string"
+          },
+          "publicKey": {
+            "type": "string"
+          }
+        }
+      },
+      "SMTPIntegrationConfig": {
+        "type": "object",
+        "required": [
+          "host",
+          "port",
+          "from"
+        ],
+        "description": "Custom SMTP (Business+). Replaces Apruvly system mail for email steps. `username`/`password` optional depending on the server.",
+        "properties": {
+          "host": {
+            "type": "string"
+          },
+          "port": {
+            "type": "integer"
+          },
+          "username": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string",
+            "format": "email"
+          },
+          "useTLS": {
+            "type": "boolean"
+          }
+        }
+      },
+      "TwilioIntegrationConfig": {
+        "type": "object",
+        "required": [
+          "accountSid"
+        ],
+        "description": "Provide `authToken` and/or `apiKeySid`+`apiKeySecret`.",
+        "properties": {
+          "accountSid": {
+            "type": "string"
+          },
+          "authToken": {
+            "type": "string"
+          },
+          "apiKeySid": {
+            "type": "string"
+          },
+          "apiKeySecret": {
+            "type": "string"
+          },
+          "messagingServiceSid": {
+            "type": "string"
+          },
+          "senderNumbers": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^\\+[1-9]\\d{6,14}$",
+              "example": "+5511999999999"
+            }
+          },
+          "contentSidApproval": {
+            "type": "string"
+          },
+          "helpText": {
+            "type": "string"
+          }
+        }
+      },
+      "TwilioWhatsAppIntegrationConfig": {
+        "type": "object",
+        "required": [
+          "accountSid",
+          "fromPhone"
+        ],
+        "properties": {
+          "accountSid": {
+            "type": "string"
+          },
+          "authToken": {
+            "type": "string"
+          },
+          "apiKeySid": {
+            "type": "string"
+          },
+          "apiKeySecret": {
+            "type": "string"
+          },
+          "fromPhone": {
+            "type": "string",
+            "pattern": "^\\+[1-9]\\d{6,14}$",
+            "example": "+5511999999999"
+          },
+          "contentSidApproval": {
+            "type": "string"
+          },
+          "contentVariables": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "mediaUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "helpText": {
+            "type": "string"
+          },
+          "dailyMessageLimit": {
+            "type": "integer"
+          }
+        }
+      },
+      "IntegrationConfig": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/MSTeamsIntegrationConfig"
+          },
+          {
+            "$ref": "#/components/schemas/SlackIntegrationConfig"
+          },
+          {
+            "$ref": "#/components/schemas/WhatsAppIntegrationConfig"
+          },
+          {
+            "$ref": "#/components/schemas/TelegramIntegrationConfig"
+          },
+          {
+            "$ref": "#/components/schemas/DingTalkIntegrationConfig"
+          },
+          {
+            "$ref": "#/components/schemas/DiscordIntegrationConfig"
+          },
+          {
+            "$ref": "#/components/schemas/SMTPIntegrationConfig"
+          },
+          {
+            "$ref": "#/components/schemas/TwilioIntegrationConfig"
+          },
+          {
+            "$ref": "#/components/schemas/TwilioWhatsAppIntegrationConfig"
+          }
+        ]
+      },
+      "IntegrationStatus": {
+        "type": "object",
+        "description": "GET response. Secrets are never returned — only non-secret identifiers and `has*` boolean flags (e.g. `hasBotToken`, `hasAccessToken`).",
+        "properties": {
+          "integration": {
+            "type": "string",
+            "enum": [
+              "ms-teams",
+              "slack",
+              "whatsapp",
+              "smtp",
+              "telegram",
+              "dingtalk",
+              "twilio",
+              "twilio-whatsapp",
+              "discord"
+            ]
+          },
+          "configured": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "required": [
+          "integration",
+          "configured"
+        ]
+      },
+      "DirectoryContact": {
+        "type": "object",
+        "required": [
+          "provider",
+          "address"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "email",
+              "slack",
+              "ms-teams",
+              "twilio-sms",
+              "twilio-whatsapp",
+              "whatsapp",
+              "telegram",
+              "discord"
+            ]
+          },
+          "address": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          }
+        }
+      },
+      "DirectoryArea": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "DirectoryAreaInput": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "DirectoryPerson": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "area_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "contacts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DirectoryContact"
+            }
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "DirectoryPersonInput": {
+        "type": "object",
+        "required": [
+          "display_name"
+        ],
+        "properties": {
+          "display_name": {
+            "type": "string"
+          },
+          "area_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "contacts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DirectoryContact"
+            }
+          }
+        }
+      },
+      "DirectoryPeopleList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DirectoryPerson"
+            }
+          },
+          "total": {
+            "type": "integer"
+          },
+          "page": {
+            "type": "integer"
+          },
+          "page_size": {
+            "type": "integer"
+          }
+        }
+      },
+      "DirectoryBulkAreasRequest": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "type": "object",
+              "required": [
+                "name"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid",
+                  "description": "Required on PUT (update)."
+                },
+                "name": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "DirectoryBulkAreasResponse": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DirectoryArea"
+            }
+          },
+          "count": {
+            "type": "integer"
+          }
+        }
+      },
+      "DirectoryBulkPeopleRequest": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 1000,
+            "items": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/DirectoryPersonInput"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Required on PUT (update)."
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "DirectoryBulkPeopleResponse": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DirectoryPerson"
+            }
+          },
+          "count": {
+            "type": "integer"
+          }
+        }
+      }
+    },
+    "parameters": {},
+    "responses": {
+      "OK": {
+        "description": "OK",
+        "content": {
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/APIResponse"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "const": true
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "CreatedId": {
+        "description": "Accepted — workflow started",
+        "content": {
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/APIResponse"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/WorkflowCreated"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "WorkflowStatus": {
+        "description": "OK",
+        "content": {
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/APIResponse"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/WorkflowStatus"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "CanceledId": {
+        "description": "Canceled",
+        "content": {
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/APIResponse"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "data": {
+                      "type": "object",
+                      "required": [
+                        "id"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "BillingInfo": {
+        "description": "OK",
+        "content": {
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/APIResponse"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/BillingInfo"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "IntegrationList": {
+        "description": "OK",
+        "content": {
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/APIResponse"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/IntegrationStatus"
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "IntegrationStatus": {
+        "description": "OK",
+        "content": {
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/APIResponse"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/IntegrationStatus"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "WorkflowStateList": {
+        "description": "OK",
+        "content": {
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/APIResponse"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/WorkflowState"
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "DirectoryArea": {
+        "description": "OK",
+        "content": {
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/APIResponse"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/DirectoryArea"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "DirectoryAreaList": {
+        "description": "OK",
+        "content": {
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/APIResponse"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DirectoryArea"
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "DirectoryPerson": {
+        "description": "OK",
+        "content": {
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/APIResponse"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/DirectoryPerson"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "DirectoryPeopleList": {
+        "description": "OK",
+        "content": {
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/APIResponse"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/DirectoryPeopleList"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "DirectoryBulkAreas": {
+        "description": "OK",
+        "content": {
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/APIResponse"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/DirectoryBulkAreasResponse"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "DirectoryBulkPeople": {
+        "description": "OK",
+        "content": {
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/APIResponse"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/DirectoryBulkPeopleResponse"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "Invalid or missing API key",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "API key lacks required scope",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Not found",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "BadRequest": {
+        "description": "Validation or request error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "Conflict": {
+        "description": "Conflict",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "NotAcceptable": {
+        "description": "Workflow already closed",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "PaymentRequired": {
+        "description": "Insufficient credits, plan limit, or feature not on plan",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "Unprocessable": {
+        "description": "Required integration not configured",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "RateLimited": {
+        "description": "Rate limit or plan quota exceeded",
+        "content": {
+          "application/json": {
+            "schema": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                {
+                  "$ref": "#/components/schemas/QuotaErrorResponse"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "NoContent": {
+        "description": "No content"
+      },
+      "DirectoryPaymentRequired": {
+        "description": "Directory not on current plan (`plan_not_eligible`)",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "DirectoryDisabled": {
+        "description": "Directory disabled in console (`directory_disabled`)",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      }
+    }
+  }
+}

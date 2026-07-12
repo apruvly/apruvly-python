@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+
+if [[ -x "$ROOT/.venv/bin/ruff" ]]; then
+  PATH="$ROOT/.venv/bin:$PATH"
+fi
+
+echo "==> ruff check"
+ruff check src tests examples
+
+echo "==> mypy"
+mypy src
+
+echo "==> pytest"
+pytest
+
+echo "==> pre-commit checks passed"
