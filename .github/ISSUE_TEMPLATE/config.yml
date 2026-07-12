@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/apruvly/apruvly-python/security/advisories/new
+    about: Report a security issue privately (do not open a public issue).
+  - name: Apruvly documentation
+    url: https://apruvly.io/documentation
+    about: Product and API docs for the Apruvly service.

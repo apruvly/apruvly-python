@@ -1,0 +1,42 @@
+name: Feature request
+description: Suggest an improvement to the Python client
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Ideas for the **Apruvly product/API** belong in product feedback channels.
+        Use this template for the **Python client** (API surface, DX, packaging, docs in this repo).
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What problem would this solve?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: How should the client behave?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches you tried or considered.
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Links, OpenAPI fields, sample payloads (no secrets).
+    validations:
+      required: false

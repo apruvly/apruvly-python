@@ -245,11 +245,13 @@ python examples/create_workflow.py
 
 ```bash
 pip install -e ".[dev]"
-git config core.hooksPath .githooks   # enable signed-commit checks (ruff, mypy, pytest)
 ruff check src tests examples
 mypy src
 pytest
 ```
+
+Maintainers: see [CONTRIBUTING.md](CONTRIBUTING.md) for hooks, releases, and PyPI publishing.  
+Security: see [SECURITY.md](SECURITY.md).
 
 ## License
 
