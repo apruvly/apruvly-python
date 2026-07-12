@@ -1,0 +1,62 @@
+# Publish to PyPI via Trusted Publishing (OIDC).
+# Trigger: push a version tag (e.g. v0.1.0).
+#
+# Prerequisites (one-time, manual):
+# 1. Create GitHub Environment named "pypi" (Settings → Environments).
+# 2. Register this workflow as a Trusted Publisher on PyPI
+#    (pending publisher if the project does not exist yet).
+
+name: Publish
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build distributions
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tooling
+        run: python -m pip install -U pip build
+
+      - name: Build sdist and wheel
+        run: python -m build
+
+      - name: Upload distributions
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/
+
+  publish:
+    name: Publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/apruvly
+    permissions:
+      id-token: write # required for Trusted Publishing (OIDC)
+    steps:
+      - name: Download distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/
+
+      - name: Publish package distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
